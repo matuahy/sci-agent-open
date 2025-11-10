@@ -1,4 +1,3 @@
-# 【完全保持原样，无任何修改】
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,6 +7,10 @@ import os
 from dotenv import load_dotenv
 import logging
 import traceback
+from utils import save_state_for_reading_agent
+from operator import add
+from typing_extensions import Annotated
+from langchain_core.messages import BaseMessage
 
 # Load environment variables
 load_dotenv()
@@ -16,10 +19,14 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --------------------------------------------------
 # Import the workflow from search_plan.py
-from search_plan import app as workflow_app
-from search_plan import OverallState
+# from search_plan import app as workflow_app
+# from search_plan import OverallState
+from read_search_plan import app as workflow_app
+from read_search_plan import OverallState
 
+# -----------------------------------------------------
 # Initialize FastAPI app
 api_app = FastAPI(
     title="Multi-Agent Scientific Research Backend",
@@ -49,12 +56,26 @@ class QueryInput(BaseModel):
         return values
 
 
+# ---------------------------------------------
 # Define output model
-class ResponseOutput(BaseModel):
-    planner_output: Dict[str, Any]
-    search_results: List[Dict[str, Any]]
-    messages: List[Any]
 
+class Task(BaseModel):
+    task_id: str
+    agent: str
+    instruction: str
+
+
+class ResponseOutput(BaseModel):
+    query: str  # 用户的原始查询 (input.query)
+    planner_output: Dict[str, Any]  # 规划器生成的大纲
+    tasks: List[Task]  # 任务列表 (未使用但保留)
+    search_results: List[Dict[str, Any]]  # 搜索结果 (PubMed URL列表)
+    paper_content: List[Dict[str, Any]]  # 下载的全文（含 content）
+    chroma_dir: str  # Chroma 持久化目录
+    messages: Annotated[List[BaseMessage], add]  # 对话历史或 agent 间的消息
+
+
+# ------------------------------------------------
 
 # Health check endpoint
 @api_app.get("/health")
@@ -93,6 +114,8 @@ async def process_query(input: QueryInput):
             "planner_output": {},
             "tasks": [],
             "search_results": [],
+            "paper_content": [],
+            "chroma_dir": "",
             "messages": []
         }
 
@@ -101,18 +124,24 @@ async def process_query(input: QueryInput):
         for output in workflow_app.stream(initial_state):
             for key, value in output.items():
                 logger.debug(f"Node {key} output: {value}")
-            final_state = value
-
+                final_state = value
         if not final_state:
             raise ValueError("Workflow did not produce a final state")
-
         logger.info("Workflow completed successfully")
 
+        save_state_for_reading_agent(final_state, filename_prefix="full_state")
+        logger.info("✅ Saved full_state.json successfully.")
+
         return ResponseOutput(
+            query=input.query,
             planner_output=final_state.get("planner_output", {}),
+            tasks=final_state.get("tasks", []),
             search_results=final_state.get("search_results", []),
-            messages=final_state.get("messages", [])
+            paper_content=final_state.get("paper_content", []),
+            chroma_dir=final_state.get("chroma_dir", ""),  # 正确位置
+            messages=final_state.get("messages", []),
         )
+
 
     except ValueError as ve:
         logger.error(f"Validation error: {str(ve)}")

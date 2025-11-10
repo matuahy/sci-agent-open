@@ -1,17 +1,22 @@
+# read_search_plan.py
 import json
 from typing import Annotated, List, Dict, Any
 from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
+from operator import add
 import traceback
 import os
 import requests
 import xmltodict
 from langchain_core.tools import tool
+from sci_RAG import Pubmed_RAG
+from langgraph.prebuilt import create_react_agent
 
 # 调试日志函数
 def debug_log(message: str):
     print(f"[DEBUG] {message}")
+
 
 # 测试 API 可用性
 def test_api_connectivity():
@@ -32,9 +37,11 @@ def test_api_connectivity():
         debug_log(f"PubMed API test failed: {str(e)}")
         return False
 
+
 # 导入 LLM 模型
 try:
     from llm_models import get_chat_model
+
     llm = get_chat_model()
     debug_log("LLM initialized successfully")
 except ImportError as e:
@@ -42,7 +49,7 @@ except ImportError as e:
     llm = None
 
 # Planner Agent
-from langgraph.prebuilt import create_react_agent
+
 
 planner_agent = create_react_agent(
     model=llm,
@@ -102,6 +109,7 @@ planner_agent = create_react_agent(
     name="planner_agent",
 )
 
+
 # --- Search Agent Tools ---
 @tool
 def search_pubmed(query: str, retmax: int = 50) -> List[str]:
@@ -138,6 +146,7 @@ def search_pubmed(query: str, retmax: int = 50) -> List[str]:
     except Exception as e:
         debug_log(f"Error in PubMed search: {str(e)}")
         return []
+
 
 @tool
 def fetch_pubmed_details(pmids: List[str]) -> List[Dict[str, Any]]:
@@ -177,7 +186,8 @@ def fetch_pubmed_details(pmids: List[str]) -> List[Dict[str, Any]]:
                 title = article_info.get('ArticleTitle', 'No Title')
                 abstract_text = article_info.get('Abstract', {}).get('AbstractText', 'No Abstract')
                 if isinstance(abstract_text, list):
-                    abstract_text = ' '.join([t.get('#text', '') if isinstance(t, dict) else str(t) for t in abstract_text])
+                    abstract_text = ' '.join(
+                        [t.get('#text', '') if isinstance(t, dict) else str(t) for t in abstract_text])
                 journal = article_info.get('Journal', {}).get('Title', 'No Journal')
                 pub_date = article_info.get('Journal', {}).get('JournalIssue', {}).get('PubDate', {})
                 year = pub_date.get('Year', 'Unknown')
@@ -246,6 +256,7 @@ def search_geo(query: str, retmax: int = 20) -> List[str]:
         print(f"GEO search failed: {response.status_code}")
         return []
 
+
 @tool
 def fetch_geo_details(gse_ids: List[str]) -> List[Dict[str, Any]]:
     """
@@ -298,6 +309,7 @@ def fetch_geo_details(gse_ids: List[str]) -> List[Dict[str, Any]]:
     else:
         print(f"GEO API fetch failed with status code: {response.status_code}")
         return []
+
 
 search_tools = [search_pubmed, fetch_pubmed_details, search_geo, fetch_geo_details]
 
@@ -355,13 +367,17 @@ search_agent = create_react_agent(
     name="search_agent",
 )
 
-# 定义状态类型
+
 class OverallState(TypedDict):
-    query: str
-    planner_output: Dict[str, Any]
-    tasks: List[Dict[str, Any]]
-    search_results: List[Dict[str, Any]]
-    messages: List[Any]
+    """LangGraph 维护的全局状态。"""
+    query: str  # 用户的原始查询 (input.query)
+    planner_output: Dict[str, Any]  # 规划器生成的大纲
+    tasks: List[str]  # 任务列表 (未使用但保留)
+    search_results: List[Dict[str, Any]]  # 搜索结果 (PubMed URL列表)
+    paper_content: List[Dict[str, Any]]  # 下载的全文（含 content）
+    chroma_dir: str  # Chroma 持久化目录
+    messages: Annotated[List[BaseMessage], add]  # 对话历史或 agent 间的消息
+
 
 # Planner Node
 def run_planner_node(state: OverallState) -> OverallState:
@@ -392,14 +408,15 @@ def run_planner_node(state: OverallState) -> OverallState:
         traceback.print_exc()
         return state
 
+
 # Search Node
 def run_search_node(state: OverallState) -> OverallState:
     debug_log("Starting Search Agent node")
     try:
         config = {
-        "configurable": {
-            "recursion_limit": 5,    # 严格限制5次
-            "max_iterations": 6       # 最多6个任务
+            "configurable": {
+                "recursion_limit": 5,  # 严格限制5次
+                "max_iterations": 6  # 最多6个任务
             }
         }
         search_results = []
@@ -446,6 +463,41 @@ def run_search_node(state: OverallState) -> OverallState:
         traceback.print_exc()
         return state
 
+
+# ──────────────────────────────────────────────────────────────
+# ③ RAG Node
+# ──────────────────────────────────────────────────────────────
+def run_RAG_node(state: OverallState) -> OverallState:
+    """
+    1. 从 search_results 中提取所有 PubMed URL
+    2. 下载 PMC 全文 → 切块 → 写入 Chroma（逐篇写入）
+    3. 把 paper_content 与 chroma_dir 写回 state，供后续节点使用
+    """
+    debug_log("Starting RAG node (download + vector DB)")
+
+    try:
+        # 直接调用 Pubmed_RAG.run_RAG（已封装好全部流程）
+        rag = Pubmed_RAG()
+        rag_result = rag.run_RAG(state)
+
+        # 更新 state
+        state.update(rag_result)
+
+        debug_log(
+            f"RAG node completed – "
+            f"{len(state.get('paper_content', []))} papers stored, "
+            f"vector DB at {state.get('chroma_dir')}"
+        )
+    except Exception as e:
+        debug_log(f"RAG node exception: {str(e)}")
+        traceback.print_exc()
+        # 即使出错也把空结果写回，防止流程卡死
+        state["paper_content"] = []
+        state["chroma_dir"] = rag.persist_directory
+
+    return state
+
+
 # 条件边：只有无澄清问题时才执行search
 def should_run_search(state: OverallState) -> str:
     questions = state["planner_output"].get("clarifying_questions", [])
@@ -455,17 +507,32 @@ def should_run_search(state: OverallState) -> str:
     debug_log("✅ No clarifying questions, running search")
     return "search_node"
 
-# 构建 LangGraph 流程 - 添加条件边
+
+# -------------------------------------------------
+# ② 工作流：Planner → Search → RAG → END
+# -------------------------------------------------
 workflow = StateGraph(OverallState)
+
+# 节点注册
 workflow.add_node("planner_node", run_planner_node)
 workflow.add_node("search_node", run_search_node)
+workflow.add_node("rag_node", run_RAG_node)  # 新增
+
+# 边
 workflow.add_edge(START, "planner_node")
+
 workflow.add_conditional_edges(
     "planner_node",
     should_run_search,
-    {"search_node": "search_node", END: END}
+    {
+        "search_node": "search_node",
+        END: END
+    }
 )
-workflow.add_edge("search_node", END)
+
+# search → rag → end
+workflow.add_edge("search_node", "rag_node")  # 关键
+workflow.add_edge("rag_node", END)  # 关键
 
 app = workflow.compile()
 

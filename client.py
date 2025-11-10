@@ -2,7 +2,7 @@
 import requests
 import json
 
-API_URL = "http://localhost:8080/query"
+API_URL = "http://localhost:8000/query"
 
 
 def main():
@@ -36,7 +36,11 @@ def main():
             print("\nSearch Results:")
             print(json.dumps(result.get("search_results", []), indent=2, ensure_ascii=False))
             print("\n")
-
+            #----------------------------
+            # 在打印完 search_results 之后
+            print("\nRAG DB (chroma_dir):")
+            print(json.dumps(result.get("chroma_dir", []), indent=2, ensure_ascii=False))
+            #------------------------------
             clarifying_questions = planner_output.get("clarifying_questions", [])
             if clarifying_questions:
                 print("\n🤔 CLARIFYING QUESTIONS:")
