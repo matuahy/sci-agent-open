@@ -1,4 +1,4 @@
-# ./client.py
+# ./client.py 客户端
 """
 客户端
 """
