@@ -14,10 +14,10 @@ from sciengine.agent.utils import debug_log
 from sciengine.agent.overallstate import OverallState
 
 
-# 创建本地 planner_agent
+# 创建本地 search_agent
 llm = get_chat_model()
 
-#————————————维护状态————————————————————
+
 
 search_agent = create_react_agent(
     model=llm,
