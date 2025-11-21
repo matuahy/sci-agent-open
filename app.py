@@ -1,4 +1,3 @@
-#con_app.py 并发
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +7,7 @@ import os
 from dotenv import load_dotenv
 import logging
 import traceback
-from sciengine.utils import save_state_for_reading_agent
+from sciengine.agent.utils import save_state_for_reading_agent
 from langchain_core.messages import BaseMessage
 
 # Load environment variables
@@ -19,12 +18,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------
-# Import the workflow from con_read_search_plan.py
-from con_read_search_plan import app as workflow_app
-from con_read_search_plan import OverallState
+# Import the workflow from app_graph.py
+from app_graph import app_graph as workflow_app
+from app_graph import OverallState
 
 # -----------------------------------------------------
-# Initialize FastAPI app
+# Initialize FastAPI app_graph
 api_app = FastAPI(
     title="Multi-Agent Scientific Research Backend",
     description="API for running multi-agent workflow on scientific queries",
@@ -69,6 +68,7 @@ class ResponseOutput(BaseModel):
     paper_content: List[Dict[str, Any]]  # 下载的全文（含 content）
     chroma_dir: str  # Chroma 持久化目录
     messages: List[Dict[str, Any]]  # 对话历史或 agent 间的消息（序列化为 dict）
+    final_report: Dict[str, Any] = {}
 
 
 # ------------------------------------------------
@@ -123,13 +123,18 @@ async def process_query(input: QueryInput):
 
         if not final_state:
             raise ValueError("Workflow did not produce a final state")
+
         logger.info("Workflow completed successfully")
 
-        # Save full state
-        save_state_for_reading_agent(final_state, filename_prefix="full_state")
-        logger.info("✅ Saved full_state.json successfully.")
+        # ---- 清理不可序列化字段 ----
+        for key in ["dynamic_bm25", "dynamic_docs", "dynamic_vectorstore", "retriever", "bm25"]:
+            final_state.pop(key, None)
 
-        # Convert messages to dicts
+        # ---- 保存状态 ----
+        save_state_for_reading_agent(final_state, filename_prefix="full_state")
+        logger.info("Saved full_state.json successfully.")
+
+        # ---- 序列化 messages ----
         messages_serialized = [
             {"type": m.type, "content": m.content} if isinstance(m, BaseMessage) else m
             for m in final_state.get("messages", [])
@@ -143,7 +148,9 @@ async def process_query(input: QueryInput):
             paper_content=final_state.get("paper_content", []),
             chroma_dir=final_state.get("chroma_dir", ""),
             messages=messages_serialized,
+            final_report=final_state.get("final_report", {})
         )
+
 
     except ValueError as ve:
         logger.error(f"Validation error: {str(ve)}")

@@ -1,3 +1,7 @@
+# sciengine/llm_model.py
+"""
+封装模型，阿里百炼
+"""
 def get_chat_model():
     from langchain_openai import ChatOpenAI  # 延迟导入
     import os

@@ -1,22 +1,20 @@
-from sciengine.agent.agent_prompts import PLAN_SYSTEM_PROMPT
-from typing_extensions import TypedDict
+# sciengine/node/plan_node.py
+"""
+plan agent node，是graph的入口，根据用户的需要，向用户提出clarifying questions，回答之后，规划大纲及任务
+"""
 import json
-from typing import Annotated, List, Dict, Any
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from operator import add
 import traceback
-from sciengine.llm_models import get_chat_model
+from sciengine.model.llm_models import get_chat_model
+from sciengine.agent.agent_prompts import PLAN_SYSTEM_PROMPT
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
-from sciengine.utils import debug_log
 from langgraph.graph import START, END
-import os
+from sciengine.agent.utils import debug_log
 from sciengine.agent.overallstate import OverallState
 
 # 创建本地 planner_agent
 llm = get_chat_model()
-
-#————————————维护状态————————————————————
 
 planner_agent = create_react_agent(
     model=llm,
@@ -24,6 +22,7 @@ planner_agent = create_react_agent(
     prompt=SystemMessage(content=PLAN_SYSTEM_PROMPT),
     name="planner_agent",
 )
+
 
 # Planner Node
 def run_planner_node(state: OverallState) -> OverallState:
@@ -54,4 +53,4 @@ def run_planner_node(state: OverallState) -> OverallState:
         traceback.print_exc()
         return state
 
-    
+

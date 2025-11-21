@@ -1,15 +1,23 @@
+# sciengine/con_sci_embedding.py
+"""
+RAG的嵌入模块。
+PubMed_url → Pmcid_url → 全文 → 切块 → 向量库
+embedding model: bioembedding
+vector database: chroma
+[将全文并发嵌入向量数据库]
+"""
 import os
-import json
-from typing import List, Dict, Any
 import trafilatura
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_core.messages import HumanMessage
-from sciengine import llm_models,bioembedding,pubmed_to_pmc
-import asyncio
+from sciengine.model.bioembedding_model import BioBERTEmbeddings
+from sciengine.tools import pubmed_to_pmc
 from concurrent.futures import ThreadPoolExecutor
 import tempfile
 import asyncio
+from typing import List, Dict, Any
+from sciengine.model.llm_models import get_chat_model
+
 
 class Pubmed_RAG:
     """
@@ -21,12 +29,12 @@ class Pubmed_RAG:
     """
 
     def __init__(self, embedding_path="/root/autodl-tmp/backend/biobert-embeddings"):
-        self.embedding = bioembedding.BioBERTEmbeddings(embedding_path)
-        self.llm = llm_models.get_chat_model()
+        self.embedding = BioBERTEmbeddings(embedding_path)
+        self.llm = get_chat_model()
         self.persist_directory = "./chroma_papers"
 
     # =====================================================================
-    # ⑧ 从 search_results 中提取 PubMed URL（你需要的功能）
+    # ⑧ 从 search_results 中提取 PubMed URL
     # =====================================================================
     def extract_pubmed_urls_from_tasks(self, search_results: List[Dict[str, Any]]) -> List[str]:
         """
@@ -60,7 +68,7 @@ class Pubmed_RAG:
 
         print(f"✅ 共提取到 {len(urls)} 条 PubMed 链接")
         return urls
-        
+
     # =====================================================================
     # ① PubMed → PMC
     # =====================================================================
@@ -81,38 +89,71 @@ class Pubmed_RAG:
     # ② 下载 PMC 全文
     # =====================================================================
     def get_paper_content(self, pmcid_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        下载 PMC 全文，并保存到项目根目录下的 paper_content.json（安全路径）
+        """
         results = []
-        for item in pmcid_items:
-            pmc_url = item.get("pmc_url")
-            print(f"Downloading: {pmc_url}")
+        valid_items = [item for item in pmcid_items if item.get("pmc_url")]
 
-            downloaded = trafilatura.fetch_url(pmc_url)
-            text = trafilatura.extract(downloaded) if downloaded else None
+        print(f"开始下载 {len(valid_items)} 篇 PMC 全文...")
+
+        for i, item in enumerate(valid_items, 1):
+            pmc_url = item.get("pmc_url")
+            pubmed_url = item.get("pubmed_url", "")
+            title = item.get("title", "Unknown Title")
+
+            print(f"[{i}/{len(valid_items)}] 正在下载: {title[:60]}...")
+            print(f"    PMC URL: {pmc_url}")
+
+            try:
+                downloaded = trafilatura.fetch_url(pmc_url, timeout=30)
+                if downloaded:
+                    text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
+                    if text and len(text.strip()) > 200:  # 简单判断是否有效内容
+                        print(f"    成功！共 {len(text)} 字符")
+                    else:
+                        print(f"    警告：内容太短或为空，已跳过")
+                        text = None
+                else:
+                    print(f"    失败：trafilatura 返回 None")
+                    text = None
+            except Exception as e:
+                print(f"    异常：{e}")
+                text = None
 
             results.append({
-                "pubmed_url": item.get("pubmed_url"),
+                "pubmed_url": pubmed_url,
                 "pmcid": pmc_url,
-                "title": item.get("title"),
-                "content": text
+                "title": title,
+                "content": text  # 可能是 None
             })
 
-        # 保存到 json（可选）
-        with open("../../../../../../../EdgeX/paper_content.json", "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
+        # 安全保存到项目根目录（推荐路径）
+        save_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "paper_content.json")
+        # 或者更稳妥：保存到当前工作目录
+        # save_path = "paper_content.json"
 
-        return results
-            
-        
-        
+        try:
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(results, f, ensure_ascii=False, indent=2)
+            print(f"所有论文内容已保存到：{save_path}")
+        except Exception as e:
+            print(f"保存 paper_content.json 失败: {e}")
+
+        # 只返回有内容的论文
+        valid_results = [r for r in results if r["content"]]
+        print(f"最终获取到 {len(valid_results)} 篇有效全文")
+        return valid_results
+
     # ==============================================================
     # ① 单个文章处理函数（同步，线程安全）
     # ==============================================================
     def _process_one_paper(
-        paper: Dict[str, Any],
-        splitter: RecursiveCharacterTextSplitter,
-        embedding,
-        temp_dir: str,
-        method_name: str  # "fixed" or "par"
+            paper: Dict[str, Any],
+            splitter: RecursiveCharacterTextSplitter,
+            embedding,
+            temp_dir: str,
+            method_name: str  # "fixed" or "par"
     ) -> Dict[str, Any]:
         """
         处理一篇论文：切块 → 写入临时 Chroma → 返回临时路径
@@ -124,7 +165,7 @@ class Pubmed_RAG:
         if not content or not isinstance(content, str):
             return {"idx": idx, "status": "skipped", "reason": "no content"}
 
-        print(f"[{method_name}] 正在处理 #{idx+1}: {title}")
+        print(f"[{method_name}] 正在处理 #{idx + 1}: {title}")
 
         try:
             # 切片
@@ -163,10 +204,11 @@ class Pubmed_RAG:
             }
 
         except Exception as e:
-            print(f"[{method_name}] 处理失败 #{idx+1}: {e}")
-            return {"idx": idx, "status": "error", "reason": str(e)}    
+            print(f"[{method_name}] 处理失败 #{idx + 1}: {e}")
+            return {"idx": idx, "status": "error", "reason": str(e)}
 
     # ==============================================================
+
     # ① 并发，构建向量数据库-固定长度
     # ==============================================================
     async def create_VDB_fixed(self, papers: List[Dict[str, Any]]):
@@ -251,11 +293,11 @@ class Pubmed_RAG:
 
             print(f"Vector DB 合并完成！总计 {merged_count} 个 chunks")
             print(f"Main DB: {self.persist_directory}")
-        
+
     # ==============================================================
     # ① 并发，构建向量数据库-段落
-    # ==============================================================    
-        
+    # ==============================================================
+
     async def create_VDB_par(self, papers: List[Dict[str, Any]]):
         """
         并发版：每篇文章并发处理，优先按段落切块
@@ -344,8 +386,7 @@ class Pubmed_RAG:
 
             print(f"Vector DB 合并完成！总计 {merged_count} 个 chunks 写入主库")
             print(f"Main DB: {self.persist_directory}")
-        
-        
+
     # =====================================================================
     # 执行全部程序
     # =====================================================================
@@ -365,10 +406,8 @@ class Pubmed_RAG:
         state["paper_content"] = paper_content
         state["chroma_dir"] = self.persist_directory
         print("已更新state")
-        
-        return {"paper_content": state["paper_content"],
-               "chroma_dir":state["chroma_dir"]}
 
-    
-    
-    
+        return {"paper_content": state["paper_content"],
+                "chroma_dir": state["chroma_dir"]}
+
+

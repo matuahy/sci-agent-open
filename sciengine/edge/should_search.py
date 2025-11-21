@@ -1,12 +1,10 @@
-from sciengine.agent.agent_prompts import PLAN_SYSTEM_PROMPT
-from typing_extensions import TypedDict
-import json
-from typing import Annotated, List, Dict, Any
+# sciengine/edge/should_search.py
+"""
+条件边，检查plan agent节点，用户是否clarifying questions
+"""
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from operator import add
-from sciengine.utils import debug_log
+from sciengine.agent.utils import debug_log
 from langgraph.graph import START, END
-import os
 from sciengine.agent.overallstate import OverallState
 
 #————————————维护状态————————————————————
@@ -17,6 +15,6 @@ def should_run_search(state: OverallState) -> str:
     questions = state["planner_output"].get("clarifying_questions", [])
     if questions:
         debug_log(f"⏭️ Skipping search: {len(questions)} clarifying questions")
-        return END
+        return "FAIL"
     debug_log("✅ No clarifying questions, running search")
-    return "search_node"
+    return "SUCCESS"

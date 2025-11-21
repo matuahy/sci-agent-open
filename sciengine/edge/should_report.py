@@ -1,15 +1,12 @@
-from sciengine.agent.agent_prompts import PLAN_SYSTEM_PROMPT
-from typing_extensions import TypedDict
-import json
-from typing import Annotated, List, Dict, Any
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from operator import add
-from sciengine.utils import debug_log
-from langgraph.graph import START, END
-import os
-from sciengine.agent.overallstate import OverallState
+# sciengine/edge/should_report.py
+"""
+条件边，检查RAG节点是否获取了paper_content
+"""
 
-#————————————维护状态————————————————————
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from sciengine.agent.utils import debug_log
+from langgraph.graph import START, END
+from sciengine.agent.overallstate import OverallState
 
 
 def should_run_report(state: OverallState) -> str:
@@ -20,7 +17,6 @@ def should_run_report(state: OverallState) -> str:
     papers = state.get("paper_content", [])
     if len(papers) > 0:
         debug_log(f"✅ RAG found {len(papers)} papers. Continuing to next step.")
-        # 由于后续的报告生成节点尚未定义，这里暂时指向 END，但标记为 'SUCCESS'
         return "SUCCESS" 
     else:
         debug_log("❌ RAG found 0 papers. Terminating flow to prevent generating empty report.")

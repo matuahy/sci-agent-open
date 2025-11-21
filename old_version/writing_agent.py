@@ -11,9 +11,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.documents import Document
 from langgraph.prebuilt import create_react_agent
 from langchain_community.vectorstores import Chroma
-from sciengine import bioembedding, llm_models
 from rank_bm25 import BM25Okapi
-from sciengine import bge_reranker
+from sciengine.tools import bge_reranker
+from sciengine.model import llm_models, bioembedding_model
 
 # ==============================
 # 日志配置（终端 + 文件）

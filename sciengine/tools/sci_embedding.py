@@ -1,3 +1,11 @@
+# sciengine/sci_embedding.py
+"""
+RAG的嵌入模块。
+PubMed_url → Pmcid_url → 全文 → 切块 → 向量库
+embedding model: bioembedding
+vector database: chroma
+[单线程，将全文顺序嵌入向量数据库]
+"""
 import os
 import json
 from typing import List, Dict, Any
@@ -5,9 +13,9 @@ import trafilatura
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_core.messages import HumanMessage
-from pubmed_to_pmc import extract_pmc_link_from_pubmed
-from bioembedding import BioBERTEmbeddings
-from llm_models import get_chat_model
+from sciengine.tools.pubmed_to_pmc import extract_pmc_link_from_pubmed
+from sciengine.model.bioembedding_model import BioBERTEmbeddings
+from sciengine.model.llm_models import get_chat_model
 
 
 class Pubmed_RAG:
@@ -24,7 +32,6 @@ class Pubmed_RAG:
         self.llm = get_chat_model()
         self.persist_directory = "./chroma_papers"
 
-        
     # =====================================================================
     # ⑧ 从 search_results 中提取 PubMed URL（你需要的功能）
     # =====================================================================
@@ -47,21 +54,28 @@ class Pubmed_RAG:
         urls = []
 
         for task in search_results:
-            result = task.get("result", {})
-            papers = result.get("papers", [])
+            try:
+                # 多重安全检查
+                if (isinstance(task, dict) and
+                        isinstance(task.get("result"), dict) and
+                        isinstance(task["result"].get("papers"), list)):
 
-            for paper in papers:
-                url = paper.get("url", "")
-                if isinstance(url, str) and "pubmed" in url.lower():
-                    urls.append(url)
+                    for paper in task["result"]["papers"]:
+                        if (isinstance(paper, dict) and
+                                isinstance(paper.get("url"), str) and
+                                "pubmed" in paper["url"].lower()):
+                            urls.append(paper["url"])
+
+            except Exception as e:
+                print(f"⚠️ 处理任务时出错: {e}")
+                continue
 
         # 去重
         urls = list(set(urls))
 
         print(f"✅ 共提取到 {len(urls)} 条 PubMed 链接")
         return urls
-        
-        
+
     # =====================================================================
     # ① PubMed → PMC
     # =====================================================================
@@ -98,7 +112,7 @@ class Pubmed_RAG:
             })
 
         # 保存到 json（可选）
-        with open("../../../../../../../EdgeX/paper_content.json", "w", encoding="utf-8") as f:
+        with open("paper_content.json", "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
 
         return results
@@ -106,7 +120,7 @@ class Pubmed_RAG:
     # =====================================================================
     # ③ 创建向量数据库
     # =====================================================================
-    def create_VDB_fixed(self,papers):
+    def create_VDB_fixed(self, papers):
         """
         从 paper_content.json 中读取内容，
         每篇文章单独切片并写入向量库（在 for 循环内部添加 Chroma.from_texts）
@@ -129,7 +143,7 @@ class Pubmed_RAG:
             title = paper.get("title")
 
             if not content or not isinstance(content, str):
-                print(f"[跳过] 第 {idx+1} 篇文章（无 content）")
+                print(f"[跳过] 第 {idx + 1} 篇文章（无 content）")
                 continue
 
             print(f"📘 正在处理: {title}")
@@ -163,7 +177,6 @@ class Pubmed_RAG:
 
         print("🎉 向量库构建完成（逐篇写入模式）!")
 
-
     # =====================================================================
     # ③ 创建向量数据库 (已修改为优先按段落切块)
     # =====================================================================
@@ -171,16 +184,16 @@ class Pubmed_RAG:
         """
         从 paper_content.json 中读取内容，
         每篇文章单独切片并写入向量库。
-        
+
         修改：使用 RecursiveCharacterTextSplitter，优先按段落分隔符切块。
         """
 
         # BERT chunk 建议 <= 300 字符。使用递归切块，优先按段落切分。
         # separators 顺序：双换行符 (段落)、单换行符、空格、字符
         splitter = RecursiveCharacterTextSplitter(
-            separators=["\n\n", "\n", " ", ""], 
+            separators=["\n\n", "\n", " ", ""],
             chunk_size=500,  # 仍然保留，用于处理超长段落
-            chunk_overlap=75 # 仍然保留，用于处理超长段落的 overlap
+            chunk_overlap=75  # 仍然保留，用于处理超长段落的 overlap
         )
 
         # 创建向量库目录
@@ -194,7 +207,7 @@ class Pubmed_RAG:
             title = paper.get("title")
 
             if not content or not isinstance(content, str):
-                print(f"[跳过] 第 {idx+1} 篇文章（无 content）")
+                print(f"[跳过] 第 {idx + 1} 篇文章（无 content）")
                 continue
 
             print(f"📘 正在处理: {title}")
@@ -228,98 +241,7 @@ class Pubmed_RAG:
 
         print("🎉 向量库构建完成（逐篇写入模式）!")
 
-        
-        
-    # =====================================================================
-    # ④ 一个文本执行 RAG 查询
-    # =====================================================================
-    def rag_query(self, text: str, k=3):
-        if not text.strip():
-            return []
-        db = Chroma(
-            persist_directory=self.persist_directory,
-            embedding_function=self.embedding
-        )
-        results = db.similarity_search_with_score(text, k=k)
 
-        formatted = []
-        for doc, score in results:
-            formatted.append({
-                "text": doc.page_content,
-                "score": score,
-                "metadata": doc.metadata
-            })
-        return formatted
-
-    # =====================================================================
-    # ⑤ 对 outline 执行 RAG 查询
-    # =====================================================================
-    def query_outline(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        outline = state["planner_output"]["report_outline"]["section"]
-        outline_obj = outline.get("report_outline", outline)
-
-        for section in outline_obj.get("sections", []):
-            section["paper_response_title"] = self.rag_query(section.get("title", ""))
-            section["paper_response_content"] = self.rag_query(section.get("content", ""))
-
-            for sub in section.get("subsections", []):
-                sub["paper_response_title"] = self.rag_query(sub.get("title", ""))
-                sub["paper_response_content"] = self.rag_query(sub.get("content", ""))
-
-        outline["report_outline"] = outline_obj
-        return outline
-
-    # =====================================================================
-    # ⑥ 用 LLM 生成文本
-    # =====================================================================
-    def llm_generate(self, query, context):
-        prompt = (
-            "You are a scientific summarizer.\n\n"
-            f"Query: {query}\n\n"
-            f"Context:\n{context}\n\n"
-            "Write a concise scientific explanation."
-        )
-        response = self.llm.invoke([HumanMessage(prompt)])
-        return response.content
-
-    def _compose_context(self, items):
-        out = []
-        for it in items:
-            meta = it.get("metadata", {})
-            src = meta.get("title") or meta.get("pmcid") or meta.get("pubmed_url")
-            out.append(f"[{src}]\n{it.get('text','')}")
-        return "\n---\n".join(out)
-
-    # =====================================================================
-    # ⑦ 对 outline 的每个条目生成 LLM 内容
-    # =====================================================================
-    def generate_responses(self, outline: Dict[str, Any]) -> Dict[str, Any]:
-        outline_obj = outline.get("report_outline", outline)
-
-        for section in outline_obj.get("sections", []):
-
-            # section-title
-            ctx = self._compose_context(section.get("paper_response_title", []))
-            section["generate_response_title"] = self.llm_generate(section["title"], ctx)
-
-            # section-content
-            ctx = self._compose_context(section.get("paper_response_content", []))
-            section["generate_response_content"] = self.llm_generate(
-                section.get("content", section["title"]), ctx
-            )
-
-            for sub in section.get("subsections", []):
-                ctx1 = self._compose_context(sub.get("paper_response_title", []))
-                ctx2 = self._compose_context(sub.get("paper_response_content", []))
-
-                sub["generate_response_title"] = self.llm_generate(sub["title"], ctx1)
-                sub["generate_response_content"] = self.llm_generate(
-                    sub.get("content", sub["title"]), ctx2
-                )
-
-        outline["report_outline"] = outline_obj
-        return outline
-    
     def run_RAG(self, state):
         pubmed_urls = self.extract_pubmed_urls_from_tasks(state["search_results"])
         print("已提取 pubmed 链接")
@@ -336,10 +258,10 @@ class Pubmed_RAG:
         state["paper_content"] = paper_content
         state["chroma_dir"] = self.persist_directory
         print("已更新state")
-        
-        return {"paper_content": state["paper_content"],
-               "chroma_dir":state["chroma_dir"]}
 
-    
-    
-    
+        return {"paper_content": state["paper_content"],
+                "chroma_dir": state["chroma_dir"]}
+
+
+
+

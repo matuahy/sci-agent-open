@@ -1,3 +1,8 @@
+## sciengine/pubmed_to_pmc.py
+"""
+从search agent的results中，pubmed_url -> pmcid_url
+"""
+
 import requests
 from bs4 import BeautifulSoup
 import re

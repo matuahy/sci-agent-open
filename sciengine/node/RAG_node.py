@@ -1,16 +1,16 @@
-from sciengine.agent.agent_prompts import PLAN_SYSTEM_PROMPT
-from typing_extensions import TypedDict
-import json
-from typing import Annotated, List, Dict, Any
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from operator import add
-import traceback
-from sciengine.utils import debug_log
-from langgraph.graph import START, END
-import asyncio
-from sciengine.con_sci_RAG import Pubmed_RAG
-import os
+# sciengine/node/RAG_node.py
+"""
+将search node查到的结果，获取全文并传入向量数据库
+"""
+from sciengine.tools.sci_embedding import Pubmed_RAG
+from rank_bm25 import BM25Okapi
+from langchain_community.vectorstores import Chroma
+from sciengine.model.bioembedding_model import BioBERTEmbeddings
+from sciengine.agent.utils import debug_log
 from sciengine.agent.overallstate import OverallState
+import traceback
+
+embedding = BioBERTEmbeddings("/root/autodl-tmp/backend/biobert-embeddings")
 
 #————————————维护状态————————————————————
 

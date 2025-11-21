@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 
 # --------------------------------------------------
 # Import the workflow from search_plan.py
-# from search_plan import app as workflow_app
+# from search_plan import app_graph as workflow_app
 # from search_plan import OverallState
 from read_search_plan import app as workflow_app
 from read_search_plan import OverallState
 
 # -----------------------------------------------------
-# Initialize FastAPI app
+# Initialize FastAPI app_graph
 api_app = FastAPI(
     title="Multi-Agent Scientific Research Backend",
     description="API for running multi-agent workflow on scientific queries",
