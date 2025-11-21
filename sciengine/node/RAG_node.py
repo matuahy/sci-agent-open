@@ -2,7 +2,7 @@
 """
 将search node查到的结果，获取全文并传入向量数据库
 """
-from sciengine.tools.sci_embedding import Pubmed_RAG
+from sciengine.tools.sci_embedding import Pubmed_RAG #同步
 from rank_bm25 import BM25Okapi
 from langchain_community.vectorstores import Chroma
 from sciengine.model.bioembedding_model import BioBERTEmbeddings
