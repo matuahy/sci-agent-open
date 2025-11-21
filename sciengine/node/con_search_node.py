@@ -2,16 +2,15 @@
 """
 多线程并发查询文献
 """
+
 import json
 from typing import Dict, Any
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import traceback
 from sciengine.model.llm_models import get_chat_model
 from sciengine.agent.agent_prompts import SEARCH_SYSTEM_PROMPT
 from sciengine.tools.search_tools import search_tools
-from langgraph.prebuilt import create_react_agent
 from sciengine.agent.utils import debug_log
-from langgraph.graph import START, END
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor

@@ -2,11 +2,11 @@
 """
 单线程顺序查询文献
 """
+
 import json
 import traceback
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.memory import MemorySaver
 from sciengine.model.llm_models import get_chat_model
 from sciengine.agent.agent_prompts import SEARCH_SYSTEM_PROMPT
 from sciengine.tools.search_tools import search_tools

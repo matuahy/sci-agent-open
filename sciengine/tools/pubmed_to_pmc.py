@@ -6,7 +6,6 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-import json
 
 
 def extract_pmc_link_from_pubmed(pubmed_url):

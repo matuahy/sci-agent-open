@@ -2,12 +2,10 @@
 """
 维护全局状态
 """
-from typing_extensions import TypedDict
-import json
+
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from operator import add
-from typing import TypedDict, List, Dict, Any, Optional, Annotated
-from langchain_community.vectorstores import Chroma
+from typing import TypedDict, List, Dict, Any, Annotated
 
 #————————————维护状态————————————————————
 class OverallState(TypedDict):

@@ -12,7 +12,6 @@ from typing import List, Dict, Any
 import trafilatura
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_core.messages import HumanMessage
 from sciengine.tools.pubmed_to_pmc import extract_pmc_link_from_pubmed
 from sciengine.model.bioembedding_model import BioBERTEmbeddings
 from sciengine.model.llm_models import get_chat_model
