@@ -1,4 +1,4 @@
-# sciengine/con_sci_embedding.py
+# sciengine/tools/con_sci_embedding.py
 """
 RAG的嵌入模块。
 PubMed_url → Pmcid_url → 全文 → 切块 → 向量库
@@ -186,6 +186,7 @@ class Pubmed_RAG:
             # 临时向量库路径（每篇一个）
             temp_db_path = os.path.join(temp_dir, f"temp_db_{idx}_{os.getpid()}_{id(paper)}")
             os.makedirs(temp_db_path, exist_ok=True)
+            print(temp_db_path)
 
             # 写入临时库
             Chroma.from_texts(
@@ -308,13 +309,14 @@ class Pubmed_RAG:
         # 优先按段落切块
         splitter = RecursiveCharacterTextSplitter(
             separators=["\n\n", "\n", " ", ""],
-            chunk_size=500,
-            chunk_overlap=75
+            chunk_size=300,
+            chunk_overlap=50
         )
 
         # 临时目录（所有临时向量库）
         with tempfile.TemporaryDirectory() as temp_root:
             temp_dir = os.path.join(temp_root, "chroma_temp")
+            print(temp_dir)
             os.makedirs(temp_dir, exist_ok=True)
 
             # 添加索引

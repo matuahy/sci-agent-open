@@ -15,6 +15,7 @@ from langchain_community.vectorstores import Chroma
 from sciengine.tools.pubmed_to_pmc import extract_pmc_link_from_pubmed
 from sciengine.model.bioembedding_model import BioBERTEmbeddings
 from sciengine.model.llm_models import get_chat_model
+from sciengine.agent.overallstate import OverallState
 
 
 class Pubmed_RAG:
@@ -179,7 +180,7 @@ class Pubmed_RAG:
     # =====================================================================
     # ③ 创建向量数据库 (已修改为优先按段落切块)
     # =====================================================================
-    def create_VDB_par(self, papers):
+    def create_VDB_par(self, papers,state: OverallState):
         """
         从 paper_content.json 中读取内容，
         每篇文章单独切片并写入向量库。
@@ -191,8 +192,8 @@ class Pubmed_RAG:
         # separators 顺序：双换行符 (段落)、单换行符、空格、字符
         splitter = RecursiveCharacterTextSplitter(
             separators=["\n\n", "\n", " ", ""],
-            chunk_size=500,  # 仍然保留，用于处理超长段落
-            chunk_overlap=75  # 仍然保留，用于处理超长段落的 overlap
+            chunk_size=300,
+            chunk_overlap=50
         )
 
         # 创建向量库目录
@@ -204,15 +205,33 @@ class Pubmed_RAG:
         for idx, paper in enumerate(papers):
             content = paper.get("content")
             title = paper.get("title")
-
-            if not content or not isinstance(content, str):
-                print(f"[跳过] 第 {idx + 1} 篇文章（无 content）")
-                continue
+            pmid = paper.get("pmid")  # 如果有 pmid，最好用它匹配
 
             print(f"📘 正在处理: {title}")
 
-            # 切片 (现在它会优先按段落切片)
-            chunks = splitter.split_text(content)
+            if not content or not isinstance(content, str):
+                print(f"第 {idx + 1} 篇文章无 content，使用 abstract")
+                # 从 search_results 中查找对应的 abstract
+                abstract = None
+                search_results = state["search_results"]
+                for task in search_results:
+                    for p in task["result"].get("papers", []):
+                        if pmid and p.get("pmid") == pmid:
+                            abstract = p.get("abstract")
+                            break
+                        elif p.get("title") == title:
+                            abstract = p.get("abstract")
+                            break
+                    if abstract:
+                        break
+
+                if not abstract:
+                    print(f"⚠️ 未找到 abstract，跳过")
+                    continue
+
+                chunks = splitter.split_text(abstract)
+            else:
+                chunks = splitter.split_text(content)
 
             if not chunks:
                 print("⚠️ 切片为空，跳过")
@@ -228,7 +247,7 @@ class Pubmed_RAG:
                 for _ in chunks
             ]
 
-            # ✅ 将 chunks 写入 Chroma（逐篇写入）
+            # 将 chunks 写入 Chroma（逐篇写入）
             Chroma.from_texts(
                 texts=chunks,
                 metadatas=metas,
@@ -238,7 +257,6 @@ class Pubmed_RAG:
 
             print(f"✅ 已写入 {len(chunks)} 个 chunk 到向量库")
 
-        print("🎉 向量库构建完成（逐篇写入模式）!")
 
 
     def run_RAG(self, state):
@@ -251,7 +269,7 @@ class Pubmed_RAG:
         paper_content = self.get_paper_content(pmcid_urls)
         print("已获取 paper content")
 
-        self.create_VDB_par(paper_content)
+        self.create_VDB_par(paper_content,state)
         print("已构建向量数据库")
 
         state["paper_content"] = paper_content

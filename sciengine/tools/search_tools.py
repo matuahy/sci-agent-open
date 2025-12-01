@@ -25,6 +25,7 @@ def search_pubmed(query: str, retmax: int = 50) -> List[str]:
         "retmax": retmax,
         "mindate": "2018",
         "maxdate": "2025",
+        "sort": "relevance",
         "api_key": os.environ.get("NCBI_API_KEY")
     }
     try:
@@ -136,6 +137,7 @@ def search_geo(query: str, retmax: int = 20) -> List[str]:
         "term": query,
         "retmode": "xml",
         "retmax": retmax,
+        "sort": "relevance",
         "api_key": os.environ.get("NCBI_API_KEY")
     }
     response = requests.get(base_url, params=params)

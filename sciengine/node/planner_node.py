@@ -2,7 +2,6 @@
 """
 plan agent node，是graph的入口，根据用户的需要，向用户提出clarifying questions，回答之后，规划大纲及任务
 """
-
 import json
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 import traceback

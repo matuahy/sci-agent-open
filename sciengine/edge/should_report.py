@@ -3,9 +3,9 @@
 条件边，检查RAG节点是否获取了paper_content
 """
 
-
 from sciengine.agent.utils import debug_log
 from sciengine.agent.overallstate import OverallState
+
 
 def should_run_report(state: OverallState) -> str:
     """

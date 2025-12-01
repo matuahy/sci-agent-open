@@ -6,9 +6,6 @@
 from sciengine.agent.utils import debug_log
 from sciengine.agent.overallstate import OverallState
 
-
-
-
 # 条件边：只有无澄清问题时才执行search
 def should_run_search(state: OverallState) -> str:
     questions = state["planner_output"].get("clarifying_questions", [])

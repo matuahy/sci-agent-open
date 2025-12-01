@@ -2,7 +2,6 @@
 """
 多线程并发查询文献
 """
-
 import json
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage

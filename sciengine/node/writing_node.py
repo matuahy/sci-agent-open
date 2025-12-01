@@ -17,6 +17,7 @@ from sciengine.agent.agent_prompts import QUESTION_SYSTEM_PROMPT, GENERATE_SYSTE
 import os
 from sciengine.model.bioembedding_model import BioBERTEmbeddings
 from sciengine.agent.utils import info, error
+from sciengine.tools.generate_report import json_to_markdown, convert_markdown_to_word
 
 # 初始化model及agent
 embedding = BioBERTEmbeddings("/root/autodl-tmp/backend/biobert-embeddings")
@@ -139,6 +140,9 @@ async def run_con_writing_node(overallstate: Dict[str, Any], output_path="./fina
         # 直接写回 state，供前端读取，不再写磁盘
         overallstate["final_report"] = final_report
 
+        # 保存markerdown
+        json_to_markdown(final_report, markdown_report)
+
         info("写作完成，报告已写入 state")
         return overallstate
 
@@ -204,6 +208,15 @@ async def run_writing_node(overallstate: Dict[str, Any], output_path: str = "./f
     # 写回 state
     overallstate["final_report"] = final_report
     info("顺序写作全部完成！报告已写入 state['final_report']")
+
+    # 保存markerdown
+    markdown_file = "final_report.md"
+    reference_style = "reference.docx"
+    output_docx = "final_report_styled.docx"
+    json_to_markdown(final_report, markdown_file)
+    if os.path.exists(markdown_file):
+        convert_markdown_to_word(markdown_file, reference_style, output_docx)
+    info("保存markerdown 和 word")
 
     return overallstate
 
