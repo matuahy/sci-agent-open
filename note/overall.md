@@ -19,20 +19,20 @@
       * 将 questions agent 的问题作为query到向量数据库中进行查询
       * 根据查到的信息，进行段落生成
 * 项目不足可以改进的地方
-  * plan agent
+  * plan agent[已更新]
     * 这个项目实际上是个工作流，plan agent实际调用的只有search agent
     * 任务分配阶段，可以只分配search task，好好规划需要search的内容
   * search agent
     * 搜索策略
   * embedding
-    * [有些论文获取不了全文，就将search agent获取的abstract摘要嵌入向量数据库]数据结构，老错
-    * 嵌入策略
+    * 有些论文获取不了全文，就将search agent获取的abstract摘要嵌入向量数据库[已更新]
+    * 嵌入策略[ing]
   * writing node
-  * 保存文件
-    * word and markerdown
-  * 上下文(段落之间)连贯问题
-    * question agent 提问时，提供背景信息，将所有文章的摘要写进提示词
-    * generate agent传入上一个段落的摘要和下一个段落的title/content，让llm生成时需要考虑到过渡逻辑问题
+    * 保存文件[已更新]
+      * word and markerdown
+    * 上下文(段落之间)连贯问题[ing]
+      * question agent 提问时，提供背景信息，将所有文章的摘要写进提示词
+      * generate agent传入上一个段落的摘要和下一个段落的title/content，让llm生成时需要考虑到过渡逻辑问题
 ## RAG系统
       
     
