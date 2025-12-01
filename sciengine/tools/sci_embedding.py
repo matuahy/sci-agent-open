@@ -205,7 +205,8 @@ class Pubmed_RAG:
         for idx, paper in enumerate(papers):
             content = paper.get("content")
             title = paper.get("title")
-            pmid = paper.get("pmid")  # 如果有 pmid，最好用它匹配
+            pubmed_url = paper.get("pubmed_url")  # 如果有 pubmed_url，最好用它匹配
+            pmcid = paper.get("pmcid")
 
             print(f"📘 正在处理: {title}")
 
@@ -216,7 +217,7 @@ class Pubmed_RAG:
                 search_results = state["search_results"]
                 for task in search_results:
                     for p in task["result"].get("papers", []):
-                        if pmid and p.get("pmid") == pmid:
+                        if pubmed_url and p.get("url") == pubmed_url:
                             abstract = p.get("abstract")
                             break
                         elif p.get("title") == title:
