@@ -30,10 +30,25 @@
   * writing node
     * 保存文件[已更新]
       * word and markerdown
+    * 下载文件
     * 上下文(段落之间)连贯问题[ing]
       * question agent 提问时，提供背景信息，将所有文章的摘要写进提示词
       * generate agent传入上一个段落的摘要和下一个段落的title/content，让llm生成时需要考虑到过渡逻辑问题
-## RAG系统
-      
+
+
+
+
+![img.png](img.png)
+
+![img_1.png](img_1.png)
+
+![img_2.png](img_2.png)
+
+![img_3.png](img_3.png)
+
+![img_4.png](img_4.png)
+
+![img_5.png](img_5.png)
+
     
     

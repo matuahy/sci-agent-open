@@ -28,8 +28,8 @@ class Pubmed_RAG:
     - 使用 LLM 生成响应
     """
 
-    def __init__(self, embedding_path="/root/autodl-tmp/backend/biobert-embeddings"):
-        self.embedding = BioBERTEmbeddings(embedding_path)
+    def __init__(self):
+        self.embedding = BioBERTEmbeddings()
         self.llm = get_chat_model()
         self.persist_directory = "./chroma_papers"
 

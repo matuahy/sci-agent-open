@@ -1,10 +1,13 @@
 # 运行后端API
 from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Any
 import os
+import json
+import asyncio
 from dotenv import load_dotenv
 import logging
 import traceback
@@ -31,143 +34,192 @@ api_app = FastAPI(
     version="1.0.0"
 )
 
+# CORS configuration
+api_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Get absolute path to static directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 static_dir = os.path.join(BASE_DIR, "static")
-
-# Mount static files
+if not os.path.exists(static_dir):
+    os.makedirs(static_dir)
 api_app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-# Define input model with validation
 class QueryInput(BaseModel):
     query: str
 
-    @classmethod
-    def model_validate(cls, values):
-        query = values.get("query", "")
-        if not query.strip():
-            raise ValueError("Query cannot be empty")
-        if len(query) > 500:
-            raise ValueError("Query length exceeds 500 characters")
-        return values
-
-
-# ---------------------------------------------
-# Define output model
-class Task(BaseModel):
-    task_id: str
-    agent: str
-    instruction: str
-
-
-class ResponseOutput(BaseModel):
-    query: str  # 用户的原始查询 (input.query)
-    planner_output: Dict[str, Any]  # 规划器生成的大纲
-    tasks: List[Task]  # 任务列表
-    search_results: List[Dict[str, Any]]  # 搜索结果 (PubMed URL列表)
-    paper_content: List[Dict[str, Any]]  # 下载的全文（含 content）
-    chroma_dir: str  # Chroma 持久化目录
-    messages: List[Dict[str, Any]]  # 对话历史或 agent 间的消息（序列化为 dict）
-    final_report: Dict[str, Any] = {}
-
 
 # ------------------------------------------------
-# Health check endpoint
+# Health check & Favicon
 @api_app.get("/health")
 async def health_check():
     return {"status": "healthy", "message": "Service is running"}
 
 
-# Favicon endpoint
 @api_app.get("/favicon.ico")
 async def favicon():
     favicon_path = os.path.join(static_dir, "favicon.ico")
-    logger.info(f"Checking favicon at: {favicon_path}")
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path)
     return {"message": "Favicon not found"}
 
 
-# GET /query for guidance
-@api_app.get("/query")
-async def get_query_guidance():
-    return {
-        "message": "Please use POST /query with a JSON body containing 'query' field.",
-        "example": {"query": "how does Single-cell-RNA-sequence is used in Drosophila?"},
-        "docs": "Visit /docs for interactive API documentation"
-    }
+# ------------------------------------------------
+#  Core Workflow Stream (带心跳保活)
+# ------------------------------------------------
+async def run_workflow_stream(input_query: str):
+    q = asyncio.Queue()
+
+    async def producer():
+        try:
+            initial_state: OverallState = {
+                "query": input_query,
+                "planner_output": {},
+                "tasks": [],
+                "search_results": [],
+                "paper_content": [],
+                "chroma_dir": "",
+                "messages": []
+            }
+
+            await q.put(json.dumps({"type": "log", "content": "🚀 Workflow started (Keep-Alive enabled)..."}) + "\n")
+
+            final_state = None
+
+            async for output in workflow_app.astream(initial_state):
+                for key, value in output.items():
+                    final_state = value
+                    log_msg = f"✅ Finished step: {key}"
+                    await q.put(json.dumps({"type": "log", "content": log_msg, "node": key}) + "\n")
+
+                    if key == "planner" and "planner_output" in value:
+                        plan = value["planner_output"]
+                        if "clarifying_questions" in plan and plan["clarifying_questions"]:
+                            await q.put(
+                                json.dumps({"type": "log", "content": "❓ Generated clarifying questions"}) + "\n")
+                        else:
+                            await q.put(json.dumps({"type": "log", "content": "正在进行search..."}) + "\n")
+
+            if not final_state:
+                await q.put(json.dumps({"type": "error", "content": "Workflow did not produce a final state"}) + "\n")
+                return
+
+            await q.put(json.dumps({"type": "log", "content": "💾 Saving state..."}) + "\n")
+
+            for key in ["dynamic_bm25", "dynamic_docs", "dynamic_vectorstore", "retriever", "bm25"]:
+                final_state.pop(key, None)
+
+            save_state_for_reading_agent(final_state, filename_prefix="full_state")
+
+            messages_serialized = [
+                {"type": m.type, "content": m.content} if isinstance(m, BaseMessage) else m
+                for m in final_state.get("messages", [])
+            ]
+
+            result_data = {
+                "query": input_query,
+                "planner_output": final_state.get("planner_output", {}),
+                "tasks": final_state.get("tasks", []),
+                "search_results": final_state.get("search_results", []),
+                "chroma_dir": final_state.get("chroma_dir", ""),
+                "messages": messages_serialized,
+                "final_report": final_state.get("final_report", {})
+            }
+
+            await q.put(json.dumps({"type": "result", "data": result_data}) + "\n")
+
+        except Exception as e:
+            logger.error(f"Workflow error: {str(e)}")
+            traceback.print_exc()
+            await q.put(json.dumps({"type": "error", "content": str(e)}) + "\n")
+        finally:
+            await q.put(None)
+
+    task = asyncio.create_task(producer())
+
+    while True:
+        try:
+            data = await asyncio.wait_for(q.get(), timeout=10.0)
+            if data is None: break
+            yield data
+        except asyncio.TimeoutError:
+            yield json.dumps({"type": "ping"}) + "\n"
+
+    await task
 
 
-# Main query endpoint
-@api_app.post("/query", response_model=ResponseOutput)
+@api_app.post("/query")
 async def process_query(input: QueryInput):
-    try:
-        logger.info(f"Processing query: {input.query}")
+    logger.info(f"Processing query: {input.query}")
+    return StreamingResponse(
+        run_workflow_stream(input.query),
+        media_type="application/x-ndjson"
+    )
 
-        initial_state: OverallState = {
-            "query": input.query,
-            "planner_output": {},
-            "tasks": [],
-            "search_results": [],
-            "paper_content": [],
-            "chroma_dir": "",
-            "messages": []
-        }
 
-        logger.info("Running workflow")
-        final_state = None
-        async for output in workflow_app.astream(initial_state):
-            for key, value in output.items():
-                logger.debug(f"Node {key} output: {value}")
-                final_state = value
+# --------------------- 文件下载路由 ---------------------
 
-        if not final_state:
-            raise ValueError("Workflow did not produce a final state")
+# 定义所有可能的输出目录路径
+SEARCH_DIRS = [
+    # 1. 您指定的绝对路径 (AutoDL 标准路径)
+    # "/root/autodl-tmp/agent_test/outputs",
+    "./outputs",
+    # 2. 相对于 app.py 的 outputs 目录
+    os.path.join(BASE_DIR, "outputs"),
+    # 3. 相对于当前运行目录(CWD)的 outputs 目录
+    os.path.join(os.getcwd(), "outputs")
+]
 
-        logger.info("Workflow completed successfully")
+ALLOWED_FILES = {
+    "final_report_styled.docx",
+    "final_report.md",
+    "final_report.json"
+}
 
-        # ---- 清理不可序列化字段 ----
-        for key in ["dynamic_bm25", "dynamic_docs", "dynamic_vectorstore", "retriever", "bm25"]:
-            final_state.pop(key, None)
 
-        # ---- 保存状态 ----
-        save_state_for_reading_agent(final_state, filename_prefix="full_state")
-        logger.info("Saved full_state.json successfully.")
+@api_app.get("/download/{filename}")
+async def download_report(filename: str):
+    logger.info(f"📥 Received download request for: {filename}")
 
-        # ---- 序列化 messages ----
-        messages_serialized = [
-            {"type": m.type, "content": m.content} if isinstance(m, BaseMessage) else m
-            for m in final_state.get("messages", [])
-        ]
+    if filename not in ALLOWED_FILES:
+        logger.warning(f"⛔ Access denied for file: {filename}")
+        raise HTTPException(status_code=403, detail="Access denied: File not allowed")
 
-        return ResponseOutput(
-            query=input.query,
-            planner_output=final_state.get("planner_output", {}),
-            tasks=final_state.get("tasks", []),
-            search_results=final_state.get("search_results", []),
-            paper_content=final_state.get("paper_content", []),
-            chroma_dir=final_state.get("chroma_dir", ""),
-            messages=messages_serialized,
-            final_report=final_state.get("final_report", {})
+    # 遍历所有可能的目录寻找文件
+    found_path = None
+    checked_paths = []
+
+    for directory in SEARCH_DIRS:
+        possible_path = os.path.join(directory, filename)
+        checked_paths.append(possible_path)
+        if os.path.exists(possible_path):
+            found_path = possible_path
+            break
+
+    if found_path:
+        logger.info(f"✅ File found at: {found_path}")
+        return FileResponse(
+            path=found_path,
+            filename=filename,
+            media_type='application/octet-stream',
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
-
-
-    except ValueError as ve:
-        logger.error(f"Validation error: {str(ve)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid input: {str(ve)}"
-        )
-    except Exception as e:
-        logger.error(f"Error processing query: {str(e)}")
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
-        )
+    else:
+        error_msg = f"File not found. Checked locations: {checked_paths}"
+        logger.error(f"❌ {error_msg}")
+        raise HTTPException(status_code=404, detail=f"File not found on server.")
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(api_app, host="0.0.0.0", port=8000)
+    import os
+
+    port = int(os.getenv("PORT", 6006))
+    logger.info(f"Starting server on port {port}...")
+    uvicorn.run(api_app, host="0.0.0.0", port=port)

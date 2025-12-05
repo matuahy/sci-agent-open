@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SciAgent - AI Researcher</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 (Staticfile CDN) -->
+    <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.min.js"></script>
+    <!-- Marked.js (Staticfile CDN) -->
+    <script src="https://cdn.staticfile.net/marked/9.1.2/marked.min.js"></script>
+    <!-- DOMPurify (Staticfile CDN) -->
+    <script src="https://cdn.staticfile.net/dompurify/3.0.6/purify.min.js"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/@phosphor-icons/web"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Typography */
+        .prose { color: #334155; line-height: 1.8; font-size: 1.05rem; }
+        .prose h1 { font-size: 2.25rem; font-weight: 800; color: #1e293b; margin-bottom: 1.5rem; line-height: 1.2; }
+        .prose h2 { font-size: 1.6rem; font-weight: 700; color: #1e293b; margin-top: 2.5rem; margin-bottom: 1.2rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; }
+        .prose h3 { font-size: 1.3rem; font-weight: 600; color: #475569; margin-top: 1.75rem; margin-bottom: 0.75rem; }
+        .prose p { margin-bottom: 1.5rem; text-align: justify; }
+        .prose ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1.25rem; }
+        .prose li { margin-bottom: 0.5rem; }
+        .prose strong { color: #0f172a; font-weight: 600; }
+
+        /* Citation Style */
+        .citation-wrapper { color: #94a3b8; margin-left: 4px; font-size: 0.9em; }
+        .citation-link { font-style: italic; text-decoration: none; color: #64748b; transition: all 0.2s; }
+        .citation-link:hover { color: #2563eb; text-decoration: underline; }
+
+        /* Animations */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+    </style>
+</head>
+<body class="h-screen flex flex-col text-slate-800 overflow-hidden">
+
+    <div id="app" class="flex flex-col h-full">
+
+        <!-- Error Notification -->
+        <div v-if="errorMsg" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-red-50 text-red-700 px-6 py-4 rounded-lg shadow-lg border border-red-200 flex items-center gap-3 max-w-lg animate-bounce">
+            <i class="ph ph-warning-circle text-xl"></i>
+            <div class="flex-1 text-sm font-medium">{{ errorMsg }}</div>
+            <button @click="errorMsg = null" class="text-red-400 hover:text-red-600"><i class="ph ph-x"></i></button>
+        </div>
+
+        <!-- Header -->
+        <header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+            <div class="flex items-center gap-3">
+                <div class="bg-blue-600 text-white p-2 rounded-lg shadow-blue-200 shadow-md">
+                    <i class="ph ph-atom text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-slate-900 tracking-tight">SciAgent <span class="text-slate-400 font-normal text-sm ml-1">v3.4</span></h1>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <!-- Status Indicator -->
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
+                     :class="isConnected ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'">
+                    <div class="w-2 h-2 rounded-full" :class="isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"></div>
+                    {{ isConnected ? 'System Online' : 'Disconnected' }}
+                </div>
+
+                <!-- Settings -->
+                <div class="relative">
+                    <button @click="showConfig = !showConfig" class="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-all">
+                        <i class="ph ph-gear text-xl" :class="{'animate-spin-slow': showConfig}"></i>
+                    </button>
+
+                    <div v-if="showConfig" class="absolute right-0 top-full mt-2 w-96 bg-white rounded-xl shadow-xl border border-slate-100 p-5 z-50">
+                        <h3 class="font-bold text-slate-800 mb-3 text-sm">System Settings</h3>
+
+                        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Backend API URL</label>
+                        <input v-model="apiBaseUrl" @change="checkConnection" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm mb-4" placeholder="http://localhost:8000">
+
+                        <p class="text-xs text-slate-400 leading-relaxed bg-slate-50 p-2 rounded border border-slate-100">
+                            <strong>For AutoDL:</strong> Use Public URL (e.g., <code>https://xxxxx.seetacloud.com:xxxx</code>). Do not use localhost.
+                        </p>
+
+                        <div class="mt-4 flex justify-end">
+                            <button @click="checkConnection(); showConfig=false" class="text-xs bg-slate-900 text-white px-3 py-1.5 rounded hover:bg-slate-700">Save & Connect</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-hidden relative flex flex-col">
+
+            <!-- 1. INPUT View -->
+            <transition name="fade">
+                <div v-if="step === 'input'" class="flex-1 flex flex-col items-center justify-center p-4 bg-slate-50">
+                    <div class="w-full max-w-3xl">
+                        <div class="text-center mb-10">
+                            <h2 class="text-4xl font-extrabold text-slate-900 mb-3 tracking-tight">AI Scientific Research</h2>
+                            <p class="text-lg text-slate-500">Generate comprehensive literature reviews with citations.</p>
+                        </div>
+
+                        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+                            <textarea
+                                v-model="query"
+                                @keydown.enter.prevent="startResearch"
+                                class="w-full p-6 text-lg border-none focus:ring-0 resize-none outline-none text-slate-700 placeholder:text-slate-300 min-h-[160px]"
+                                placeholder="e.g., Applications of Single-cell RNA sequencing in Drosophila testes..."></textarea>
+
+                            <div class="bg-slate-50 px-6 py-4 flex justify-between items-center border-t border-slate-100">
+                                <div class="flex gap-4 text-xs text-slate-400 font-medium">
+                                    <span class="flex items-center gap-1"><i class="ph ph-check-circle text-green-500"></i> Plan</span>
+                                    <span class="flex items-center gap-1"><i class="ph ph-check-circle text-green-500"></i> Search</span>
+                                    <span class="flex items-center gap-1"><i class="ph ph-check-circle text-green-500"></i> Write</span>
+                                </div>
+                                <button
+                                    @click="startResearch"
+                                    :disabled="!query.trim() || !isConnected"
+                                    class="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-semibold shadow-lg shadow-blue-200 transition-all flex items-center gap-2 transform active:scale-95">
+                                    <span>Start Research</span>
+                                    <i class="ph ph-arrow-right-bold"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <!-- 2. LOADING View (Logs) -->
+            <transition name="fade">
+                <div v-if="step === 'loading'" class="absolute inset-0 bg-white/95 z-20 flex flex-col items-center justify-center p-6">
+                    <div class="w-full max-w-2xl">
+                        <div class="text-center mb-8">
+                            <div class="inline-block p-4 bg-blue-50 rounded-full mb-4 animate-bounce">
+                                <i class="ph ph-spinner animate-spin text-3xl text-blue-600"></i>
+                            </div>
+                            <h2 class="text-2xl font-bold text-slate-800">Research in Progress...</h2>
+                            <p class="text-slate-500">Processing live data stream from server</p>
+                        </div>
+
+                        <div class="bg-slate-900 rounded-xl p-6 font-mono text-xs md:text-sm text-slate-300 h-80 overflow-y-auto shadow-2xl border border-slate-700 flex flex-col-reverse relative">
+                            <div v-for="(log, idx) in logs" :key="idx" class="mb-2 border-b border-slate-800 pb-1 last:border-0">
+                                <span class="text-blue-500 opacity-60 mr-2">[{{ new Date().toLocaleTimeString() }}]</span>
+                                <span :class="{'text-emerald-400 font-bold': log.content.includes('Finished'), 'text-amber-400': log.content.includes('search'), 'text-slate-300': true}">
+                                    {{ log.content }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <!-- 3. CLARIFY View -->
+            <transition name="fade">
+                <div v-if="step === 'clarify'" class="flex-1 overflow-y-auto p-6 flex justify-center bg-slate-50">
+                    <div class="w-full max-w-2xl bg-white rounded-xl shadow-sm border border-slate-200 p-8 h-fit my-8">
+                        <div class="flex items-start gap-4 mb-8">
+                            <div class="bg-amber-100 text-amber-600 p-3 rounded-lg">
+                                <i class="ph ph-lightbulb text-2xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-900">Clarification Needed</h3>
+                                <p class="text-slate-500 mt-1 text-sm">Please help narrow down the research scope to generate a better report.</p>
+                            </div>
+                        </div>
+                        <div class="space-y-6">
+                            <div v-for="(q, index) in clarificationQuestions" :key="index" class="group">
+                                <label class="block text-sm font-semibold text-slate-700 mb-2">{{ index + 1 }}. {{ q }}</label>
+                                <input v-model="clarificationAnswers[index]" type="text" class="w-full pl-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all" placeholder="Your answer (optional)">
+                            </div>
+                        </div>
+                        <div class="mt-8 pt-6 border-t border-slate-100 flex justify-end">
+                            <button @click="submitClarifications" class="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-lg font-medium transition-all flex items-center gap-2">
+                                <span>Submit & Continue</span> <i class="ph ph-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <!-- 4. RESULTS View -->
+            <transition name="fade">
+                <div v-if="step === 'result'" class="flex-1 flex overflow-hidden">
+
+                    <!-- Sidebar -->
+                    <aside class="w-72 bg-white border-r border-slate-200 flex flex-col h-full z-10 shadow-sm flex-shrink-0">
+                        <div class="p-5">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 px-2">Navigation</h3>
+                            <nav class="space-y-2">
+                                <button @click="activeTab = 'report'" :class="activeTab === 'report' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'" class="w-full text-left px-3 py-2.5 rounded-lg transition-all flex items-center gap-3 font-medium text-sm">
+                                    <i class="ph ph-file-text text-lg"></i> Final Report
+                                </button>
+                                <button @click="activeTab = 'plan'" :class="activeTab === 'plan' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'" class="w-full text-left px-3 py-2.5 rounded-lg transition-all flex items-center gap-3 font-medium text-sm">
+                                    <i class="ph ph-kanban text-lg"></i> Research Plan
+                                </button>
+                                <button @click="activeTab = 'sources'" :class="activeTab === 'sources' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'" class="w-full text-left px-3 py-2.5 rounded-lg transition-all flex items-center gap-3 font-medium text-sm">
+                                    <i class="ph ph-magnifying-glass text-lg"></i> Search Results
+                                    <span class="ml-auto bg-slate-100 px-1.5 py-0.5 rounded text-xs text-slate-500">{{ flattenedPapers.length }}</span>
+                                </button>
+                            </nav>
+                        </div>
+
+                        <div class="mt-auto p-5 border-t border-slate-100 bg-slate-50">
+                            <!-- Download Buttons -->
+                            <a
+                                :href="docxDownloadUrl"
+                                target="_blank"
+                                class="block w-full bg-green-600 hover:bg-green-700 text-white text-center py-2.5 rounded-lg font-bold shadow-md transition-all flex items-center justify-center gap-2 text-sm mb-3">
+                                <i class="ph ph-microsoft-word-logo text-lg"></i>
+                                <span>Download .docx</span>
+                            </a>
+
+                            <a
+                                :href="mdDownloadUrl"
+                                target="_blank"
+                                class="block w-full border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-center py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-sm">
+                                <i class="ph ph-markdown-logo text-lg"></i>
+                                <span>Download .md</span>
+                            </a>
+
+                            <button @click="resetApp" class="mt-4 w-full text-slate-400 hover:text-red-500 text-xs py-2 transition-colors">Start New Research</button>
+                        </div>
+                    </aside>
+
+                    <!-- Content Area -->
+                    <section class="flex-1 overflow-y-auto bg-slate-50/50 p-8 md:p-12 scroll-smooth relative">
+                        <!--
+                            修复: 使用 min-h-full 确保内容少时背景也占满屏幕
+                        -->
+                        <div class="max-w-5xl mx-auto bg-white shadow-sm border border-slate-200 rounded-xl min-h-full p-12 flex flex-col">
+
+                            <!-- Tab: Report -->
+                            <div v-if="activeTab === 'report'" class="flex-1">
+                                <div class="mb-10 text-center border-b border-slate-100 pb-10">
+                                    <h1 class="text-3xl md:text-4xl font-extrabold text-slate-900 mb-4 leading-tight">{{ finalReport.title || 'Scientific Report' }}</h1>
+                                    <div class="flex items-center justify-center gap-4 text-sm text-slate-500">
+                                        <span class="flex items-center gap-1"><i class="ph ph-calendar-blank"></i> {{ new Date().toLocaleDateString() }}</span>
+                                        <span class="flex items-center gap-1"><i class="ph ph-robot"></i> SciAgent AI</span>
+                                    </div>
+                                </div>
+
+                                <article class="prose max-w-none">
+                                    <div v-for="(section, idx) in finalReport.sections" :key="idx" class="mb-12">
+                                        <h2 class="flex items-center gap-3">
+                                            <span class="bg-blue-100 text-blue-600 text-sm font-bold px-2 py-1 rounded">0{{ idx + 1 }}</span>
+                                            {{ section.section_title }}
+                                        </h2>
+                                        <!-- Render content -->
+                                        <div v-html="renderMarkdown(section.content)"></div>
+
+                                        <!-- Subsections -->
+                                        <div v-for="(sub, sidx) in section.subsections" :key="sidx" class="ml-2 mt-6 pl-4 border-l-2 border-slate-100">
+                                            <h3>{{ sub.section_title }}</h3>
+                                            <div v-html="renderMarkdown(sub.content)"></div>
+                                        </div>
+                                    </div>
+                                </article>
+                            </div>
+
+                            <!-- Tab: Plan -->
+                            <div v-if="activeTab === 'plan'" class="flex-1">
+                                <h2 class="text-2xl font-bold mb-6 text-slate-800">Research Execution Plan</h2>
+                                <div class="bg-slate-900 rounded-lg p-6 overflow-x-auto">
+                                    <pre class="text-emerald-400 font-mono text-xs leading-relaxed">{{ JSON.stringify(plannerOutput, null, 2) }}</pre>
+                                </div>
+                            </div>
+
+                            <!-- Tab: Search Results (Detailed) -->
+                            <div v-if="activeTab === 'sources'" class="flex-1">
+                                <div class="flex items-center justify-between mb-8">
+                                    <h2 class="text-2xl font-bold text-slate-800">Search Results</h2>
+                                    <span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold">{{ flattenedPapers.length }} Papers</span>
+                                </div>
+
+                                <div class="space-y-6">
+                                    <div v-for="(paper, idx) in flattenedPapers" :key="idx" class="border border-slate-200 rounded-xl p-6 bg-white hover:border-blue-300 hover:shadow-md transition-all group">
+                                        <!-- Title & Link -->
+                                        <a :href="paper.url" target="_blank" class="block text-xl font-bold text-blue-700 hover:underline mb-2 leading-snug">
+                                            {{ paper.title }}
+                                            <i class="ph ph-arrow-square-out text-sm ml-1 opacity-50 group-hover:opacity-100"></i>
+                                        </a>
+
+                                        <!-- Metadata -->
+                                        <div class="flex flex-wrap gap-y-2 gap-x-4 text-sm text-slate-500 mb-4 items-center">
+                                            <div class="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded">
+                                                <i class="ph ph-users text-slate-400"></i>
+                                                <span class="font-medium text-slate-700 truncate max-w-xs">{{ paper.authors || 'Unknown Authors' }}</span>
+                                            </div>
+                                            <div class="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded">
+                                                <i class="ph ph-book-open text-slate-400"></i>
+                                                <span class="italic">{{ paper.journal || 'Journal N/A' }}</span>
+                                            </div>
+                                            <div class="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded">
+                                                <i class="ph ph-calendar text-slate-400"></i>
+                                                <span>{{ paper.year || 'N/A' }}</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Abstract (Collapsible) -->
+                                        <div class="bg-slate-50 rounded-lg p-4 text-sm text-slate-600 leading-relaxed border border-slate-100 relative">
+                                            <div :class="{'line-clamp-3': !paper.expanded, 'line-clamp-none': paper.expanded}">
+                                                <span class="font-bold text-slate-400 uppercase text-xs mr-2">ABSTRACT</span>
+                                                {{ paper.abstract || 'No abstract available.' }}
+                                            </div>
+                                            <button
+                                                v-if="paper.abstract && paper.abstract.length > 200"
+                                                @click="paper.expanded = !paper.expanded"
+                                                class="mt-2 text-blue-600 text-xs font-bold hover:underline focus:outline-none flex items-center gap-1 cursor-pointer select-none">
+                                                {{ paper.expanded ? 'Show Less' : 'Read More' }}
+                                                <i class="ph" :class="paper.expanded ? 'ph-caret-up' : 'ph-caret-down'"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Empty State -->
+                                    <div v-if="flattenedPapers.length === 0" class="text-center py-12 text-slate-400">
+                                        <i class="ph ph-magnifying-glass text-4xl mb-2"></i>
+                                        <p>No search results found.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </section>
+                </div>
+            </transition>
+        </main>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, computed, nextTick } = Vue;
+
+        // Error handler
+        window.onerror = function(msg, source, lineno) {
+            alert("App Error: " + msg + "\nCheck network or try another browser.");
+        };
+
+        createApp({
+            setup() {
+                const apiBaseUrl = ref('http://localhost:8000');
+                const showConfig = ref(false);
+                const isConnected = ref(false);
+                const errorMsg = ref(null);
+
+                const step = ref('input'); query = ref(''); originalQuery = ref(''); logs = ref([]);
+                const plannerOutput = ref({}); searchResults = ref([]); flattenedPapers = ref([]); finalReport = ref({});
+                const clarificationQuestions = ref([]); clarificationAnswers = ref([]); activeTab = ref('report');
+
+                const docxDownloadUrl = computed(() => `${apiBaseUrl.value.replace(/\/$/, '')}/download/final_report_styled.docx`);
+                const mdDownloadUrl = computed(() => `${apiBaseUrl.value.replace(/\/$/, '')}/download/final_report.md`);
+
+                const renderer = new marked.Renderer();
+                renderer.link = function(token) {
+                    let href = token.href || arguments[0];
+                    let text = token.text || arguments[2] || "Ref";
+                    return `<span class="citation-wrapper">(<a href="${href}" target="_blank" class="citation-link">${text}</a>)</span>`;
+                };
+                marked.use({ renderer });
+                const renderMarkdown = (text) => text ? DOMPurify.sanitize(marked.parse(text)) : '';
+
+                const checkConnection = async () => {
+                    try {
+                        const res = await fetch(`${apiBaseUrl.value}/health`, { signal: AbortSignal.timeout(3000) });
+                        isConnected.value = res.ok;
+                    } catch(e) { isConnected.value = false; }
+                };
+
+                const startResearch = async () => {
+                    if (!query.value.trim()) return;
+                    originalQuery.value = query.value; step.value = 'loading'; logs.value = [{type:'log', content:'Connecting...'}];
+                    await streamQuery(query.value);
+                };
+
+                const submitClarifications = async () => {
+                    step.value = 'loading'; logs.value = [{type:'log', content:'Submitting answers...'}];
+                    let ans = clarificationQuestions.value.map((q,i)=>`Q${i+1}: ${q}\nA${i+1}: ${clarificationAnswers.value[i]||"No preference"}`).join('\n');
+                    await streamQuery(`${originalQuery.value}\n\nAnswers:\n${ans}`);
+                };
+
+                const streamQuery = async (qText) => {
+                    try {
+                        const res = await fetch(`${apiBaseUrl.value}/query`, {
+                            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({query: qText})
+                        });
+                        const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = '';
+                        while(true) {
+                            const {done, value} = await reader.read(); if(done) break;
+                            buf += decoder.decode(value, {stream:true}); const lines = buf.split('\n'); buf = lines.pop();
+                            for(const line of lines) {
+                                if(!line.trim()) continue;
+                                try {
+                                    const d = JSON.parse(line);
+                                    if(d.type==='log') logs.value.unshift(d);
+                                    else if(d.type==='result') handleResult(d.data);
+                                    else if(d.type==='error') { errorMsg.value=d.content; step.value='input'; }
+                                } catch(e){}
+                            }
+                        }
+                    } catch(e) { errorMsg.value=e.message; step.value='input'; }
+                };
+
+                const handleResult = (res) => {
+                    plannerOutput.value = res.planner_output || {}; searchResults.value = res.search_results || []; finalReport.value = res.final_report || {};
+
+                    const p = [];
+                    if(Array.isArray(res.search_results)) {
+                        res.search_results.forEach(t=>{
+                            if(t.result && t.result.papers) {
+                                t.result.papers.forEach(x=>p.push({...x, expanded:false}));
+                            }
+                        });
+                    }
+                    flattenedPapers.value = p;
+
+                    const qs = res.planner_output?.clarifying_questions || [];
+                    if(qs.length>0) { clarificationQuestions.value=qs; clarificationAnswers.value=new Array(qs.length).fill(''); step.value='clarify'; }
+                    else step.value='result';
+                };
+
+                const resetApp = () => { if(confirm("Start new?")) { step.value='input'; query.value=''; logs.value=[]; }};
+                onMounted(() => { checkConnection(); setInterval(checkConnection, 8000); });
+
+                return { apiBaseUrl, showConfig, isConnected, errorMsg, step, query, logs, activeTab,
+                         plannerOutput, searchResults, finalReport, clarificationQuestions, clarificationAnswers, flattenedPapers,
+                         docxDownloadUrl, mdDownloadUrl, checkConnection, renderMarkdown, startResearch, submitClarifications, resetApp };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

@@ -38,7 +38,7 @@ workflow.add_conditional_edges(
 # Search → RAG
 workflow.add_edge("search_node", "rag_node")
 
-# RAG → Conditional END (修复 : 确保只有在有数据时才继续)
+# RAG → Conditional END
 workflow.add_conditional_edges(
     "rag_node",
     should_run_report,
@@ -48,7 +48,7 @@ workflow.add_conditional_edges(
     }
 )
 
-# Writing → END（不必再检测 paper_content）
+# Writing → END
 workflow.add_edge("writing_node", END)
 
 app_graph = workflow.compile()

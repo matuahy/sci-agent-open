@@ -16,8 +16,7 @@ from sciengine.agent.overallstate import OverallState
 # 创建本地 planner_agent
 llm = get_chat_model()
 
-#————————————维护状态————————————————————
-
+# Search Agent
 search_agent = create_react_agent(
     model=llm,
     tools=search_tools,

@@ -20,16 +20,20 @@ from sciengine.agent.utils import info, error
 from sciengine.tools.generate_report import json_to_markdown, convert_markdown_to_word
 
 # 初始化model及agent
-embedding = BioBERTEmbeddings("/root/autodl-tmp/backend/biobert-embeddings")
-
 llm = get_chat_model()
-
 question_agent = create_react_agent(
     model=llm, tools=[], prompt=SystemMessage(content=QUESTION_SYSTEM_PROMPT)
 )
 generate_agent = create_react_agent(
     model=llm, tools=[], prompt=SystemMessage(content=GENERATE_SYSTEM_PROMPT)
 )
+
+# ==============================
+# 定义统一输出目录
+# ==============================
+OUTPUT_DIR = "outputs"
+if not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
 
 
 # ==============================
@@ -48,7 +52,6 @@ def _write_one_section(section: Dict[str, Any], overallstate: Dict[str, Any]) ->
         print(f"{indent}处理: {title}")
 
         # Step 1: 生成问题
-
         input_json = json.dumps({"title": title, "content": content}, ensure_ascii=False)
         try:
             q_resp = question_agent.invoke({"messages": [HumanMessage(content=input_json)]})
@@ -106,7 +109,7 @@ def _write_one_section(section: Dict[str, Any], overallstate: Dict[str, Any]) ->
 # ============================
 # 并发写作入口
 # ============================
-async def run_con_writing_node(overallstate: Dict[str, Any], output_path="./final_report.json"):
+async def run_con_writing_node(overallstate: Dict[str, Any], output_path="final_report.json"):
     report_outline = overallstate["planner_output"].get("report_outline", {})
     sections = report_outline.get("sections", [])
 
@@ -133,15 +136,24 @@ async def run_con_writing_node(overallstate: Dict[str, Any], output_path="./fina
             info(f"完成章节 {i}/{len(top_sections)}")
 
         final_report = {"title": report_outline.get("title", "Generated Report"), "sections": results}
-        with open(output_path, "w", encoding="utf-8") as f:
+
+        # --- 修改：保存到 outputs 目录 ---
+        final_json_path = os.path.join(OUTPUT_DIR, "final_report.json")
+
+        with open(final_json_path, "w", encoding="utf-8") as f:
             json.dump(final_report, f, ensure_ascii=False, indent=2)
 
-        info(f"报告生成成功，保存至: {os.path.abspath(output_path)}")
+        info(f"报告生成成功，保存至: {os.path.abspath(final_json_path)}")
+
         # 直接写回 state，供前端读取，不再写磁盘
         overallstate["final_report"] = final_report
 
-        # 保存markerdown
-        json_to_markdown(final_report, markdown_report)
+        # --- 修改：保存 Markdown 和 Word 到 outputs 目录 ---
+        markdown_file = os.path.join(OUTPUT_DIR, "final_report.md")
+        # 假设 reference.docx 依然在项目根目录
+        reference_style = "reference.docx"
+
+        json_to_markdown(final_report, markdown_file)
 
         info("写作完成，报告已写入 state")
         return overallstate
@@ -151,7 +163,7 @@ async def run_con_writing_node(overallstate: Dict[str, Any], output_path="./fina
 # 顺序写作入口
 # ============================
 
-async def run_writing_node(overallstate: Dict[str, Any], output_path: str = "./final_report.json"):
+async def run_writing_node(overallstate: Dict[str, Any], output_path: str = "final_report.json"):
     """
     顺序写作：按顶级章节顺序写作，子章节由 _write_one_section 内部递归
     """
@@ -196,12 +208,14 @@ async def run_writing_node(overallstate: Dict[str, Any], output_path: str = "./f
         "sections": final_sections
     }
 
+    # --- 修改：强制路径到 outputs 文件夹 ---
+    final_json_path = os.path.join(OUTPUT_DIR, "final_report.json")
+
     # 保存到文件
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            import json
+        with open(final_json_path, "w", encoding="utf-8") as f:
             json.dump(final_report, f, ensure_ascii=False, indent=2)
-        info(f"报告已保存到: {os.path.abspath(output_path)}")
+        info(f"报告已保存到: {os.path.abspath(final_json_path)}")
     except Exception as e:
         error(f"保存报告失败: {e}")
 
@@ -209,14 +223,17 @@ async def run_writing_node(overallstate: Dict[str, Any], output_path: str = "./f
     overallstate["final_report"] = final_report
     info("顺序写作全部完成！报告已写入 state['final_report']")
 
-    # 保存markerdown
-    markdown_file = "final_report.md"
-    reference_style = "reference.docx"
-    output_docx = "final_report_styled.docx"
+    # --- 修改：保存 Markdown 和 Word 到 outputs 目录 ---
+    markdown_file = os.path.join(OUTPUT_DIR, "final_report.md")
+    output_docx = os.path.join(OUTPUT_DIR, "final_report_styled.docx")
+    reference_style = "reference.docx"  # 样式文件通常在根目录
+
     json_to_markdown(final_report, markdown_file)
+
     if os.path.exists(markdown_file):
+        # 确保转换函数支持路径
         convert_markdown_to_word(markdown_file, reference_style, output_docx)
-    info("保存markerdown 和 word")
+
+    info(f"最终 Word 报告生成成功: {os.path.abspath(output_docx)}")
 
     return overallstate
-

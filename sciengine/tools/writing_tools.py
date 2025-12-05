@@ -23,7 +23,7 @@ def get_reranker():
     global _reranker
     if _reranker is None:
         try:
-            _reranker = BgeReranker("/root/autodl-tmp/backend/bge-reranker-large")
+            _reranker = BgeReranker()
             info("BGE Reranker 加载成功")
         except Exception as e:
             error(f"reranker 加载失败: {e}，将跳过精排")
@@ -54,7 +54,7 @@ def build_retriever_from_state(state: Dict[str, Any], k: int = 20) -> Optional[A
         # 1. 加载 Chroma 向量库（只加载一次，后面复用）
         vectorstore = Chroma(
             persist_directory=db_path,
-            embedding_function=BioBERTEmbeddings("/root/autodl-tmp/backend/biobert-embeddings")
+            embedding_function=BioBERTEmbeddings()
         )
 
         # 2. 获取所有文档文本，用于 BM25
@@ -115,7 +115,7 @@ def strongest_retrieve(query: str, state: Dict[str, Any]) -> List[Document]:
         db_path = state.get("vector_db_path") or state.get("chroma_dir", "").strip()
         vectorstore = Chroma(
             persist_directory=db_path,
-            embedding_function=BioBERTEmbeddings("/root/autodl-tmp/backend/biobert-embeddings")
+            embedding_function=BioBERTEmbeddings()
         )
 
         mmr_docs = vectorstore.max_marginal_relevance_search(query, k=15, fetch_k=30)

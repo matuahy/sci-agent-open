@@ -9,13 +9,8 @@ from sciengine.agent.utils import debug_log
 from sciengine.agent.overallstate import OverallState
 import traceback
 from langchain_community.vectorstores import Chroma
-embedding = BioBERTEmbeddings("/root/autodl-tmp/backend/biobert-embeddings")
 
-#————————————维护状态————————————————————
-
-# ──────────────────────────────────────────────────────────────
-# ③ RAG Node
-# ──────────────────────────────────────────────────────────────
+# RAG Node
 def run_RAG_node(state: OverallState) -> OverallState:
     """
     1. 从 search_results 中提取所有 PubMed URL

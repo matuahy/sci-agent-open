@@ -4,7 +4,6 @@ import os
 import subprocess
 from typing import Dict, Any
 
-
 # =========================================================================
 # 辅助函数 1: JSON 到 Markdown 转换
 # =========================================================================
@@ -104,4 +103,3 @@ def convert_markdown_to_word(markdown_file: str, reference_docx: str, output_doc
         print("❌ 错误：找不到 'pandoc' 命令。请确保 Pandoc 已安装并配置到系统 PATH 中。")
     except Exception as e:
         print(f"❌ 发生未知错误: {e}")
-
